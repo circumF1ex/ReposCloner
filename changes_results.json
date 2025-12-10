@@ -1,46 +1,67 @@
 [
   {
     "repo": "artem44-rpo/conspects",
-    "status": "no_changes"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/artem44-rpo/conspects.git/': Could not resolve host: github.com'"
   },
   {
     "repo": "Lygitheus/my-notes-college",
-    "status": "no_changes"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(128)\n  cmdline: git clone -v -- https://github.com/Lygitheus/my-notes-college.git ./repos\\Lygitheus_my-notes-college\n  stderr: 'Cloning into './repos\\Lygitheus_my-notes-college'...\nfatal: unable to access 'https://github.com/Lygitheus/my-notes-college.git/': Could not resolve host: github.com\n'"
   },
   {
     "repo": "max03587/ucheba_rep",
-    "status": "no_changes"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/max03587/ucheba_rep.git/': Could not resolve host: github.com'"
   },
   {
     "repo": "rikizq/Konspects_",
-    "status": "no_changes"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/rikizq/Konspects_.git/': Could not resolve host: github.com'"
   },
   {
     "repo": "nakkapohv/Notes-RPO",
-    "status": "no_changes"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/nakkapohv/Notes-RPO.git/': Could not resolve host: github.com'"
   },
   {
     "repo": "zarax6/Conspects-BonFire-",
-    "status": "no_changes"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/zarax6/Conspects-BonFire-.git/': Could not resolve host: github.com'"
   },
   {
     "repo": "Rel1ks/Konspect",
-    "status": "no_changes"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/Rel1ks/Konspect.git/': Could not resolve host: github.com'"
   },
   {
     "repo": "almazz3/RPO_notes",
-    "status": "no_changes"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/almazz3/RPO_notes.git/': Could not resolve host: github.com'"
   },
   {
     "repo": "Lambo1012/konspekt",
-    "status": "cloned"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/Lambo1012/konspekt.git/': Could not resolve host: github.com'"
   },
   {
     "repo": "Draago44/Konspekt",
-    "status": "cloned"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/Draago44/Konspekt.git/': Could not resolve host: github.com'"
   },
   {
     "repo": "kondratev17102009-tech/1",
-    "status": "cloned"
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/kondratev17102009-tech/1.git/': Could not resolve host: github.com'"
+  },
+  {
+    "repo": "Greia1488GOLL/Conspekt",
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/Greia1488GOLL/Conspekt.git/': Could not resolve host: github.com'"
+  },
+  {
+    "repo": "REDiskaKorneplod/korneplod",
+    "status": "error",
+    "message": "Cmd('git') failed due to: exit code(1)\n  cmdline: git pull -v -- origin\n  stderr: 'fatal: unable to access 'https://github.com/REDiskaKorneplod/korneplod.git/': Could not resolve host: github.com'"
   }
 ]
