@@ -1,194 +1,202 @@
+"""Main entry point for ReposCloner"""
+
 import os
-import sys
-import shutil
-import time
-from git import Repo, GitCommandError
 import json
-from pathlib import Path
+from datetime import datetime
+from typing import List
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
-# Папка для локального хранения репозиториев
-REPOS_DIR = './repos'
+from reposcloner.config import load_config, setup_logging
+from reposcloner.git_operations import (
+    init_git_operations, clone_repo, update_repo, reclone_repo,
+    get_last_commit_summary, view_commit_history
+)
+from reposcloner.utils import load_repos, print_summary, print_progress
+from reposcloner.search import init_search, filter_repos, search_in_repos
 
-def load_repos(repos_file='repos.txt'):
-    with open(repos_file, 'r') as f:
-        repos = [line.strip() for line in f if line.strip()]
-    return repos
+# Load configuration
+config = load_config()
+logger = setup_logging(config)
 
-def clone_repo(repo_name):
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
-    if os.path.exists(repo_path):
-        return {'repo': repo_name, 'status': 'already_cloned'}
-    try:
-        Repo.clone_from(f'https://github.com/{repo_name}.git', repo_path, config=['core.longpaths=true', 'core.quotepath=false'])
-        return {'repo': repo_name, 'status': 'cloned'}
-    except GitCommandError as e:
-        return {'repo': repo_name, 'status': 'error', 'message': str(e)}
+# Initialize modules with configuration
+REPOS_DIR = config['repos_dir']
+MAX_RETRIES = config['max_retries']
+RETRY_DELAY = config['retry_delay']
+MAX_WORKERS = config['max_workers']
+DEFAULT_COMMIT_LIMIT = config['default_commit_limit']
 
-def update_repo(repo_name):
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
-    if not os.path.exists(repo_path):
-        return {'repo': repo_name, 'status': 'not_cloned'}
-    try:
-        repo = Repo(repo_path)
-        old_commit = repo.head.commit.hexsha
-        origin = repo.remotes.origin
-        origin.pull()
-        new_commit = repo.head.commit.hexsha
-        if old_commit != new_commit:
-            new_commits = list(repo.iter_commits(f'{old_commit}..{new_commit}'))
-            changes = {
-                'repo': repo_name,
-                'status': 'updated',
-                'old_commit': old_commit,
-                'new_commit': new_commit,
-                'new_commits_count': len(new_commits),
-                'new_commits': [{'hash': c.hexsha, 'message': c.message.strip(), 'author': c.author.name} for c in new_commits]
-            }
-        else:
-            changes = {'repo': repo_name, 'status': 'no_changes'}
-    except GitCommandError as e:
-        # Merge/overwrite by default: fetch and reset --hard
-        try:
-            repo.git.fetch()
-            current_branch = repo.active_branch.name
-            repo.git.reset('--hard', f'origin/{current_branch}')
-            new_commit = repo.head.commit.hexsha
-            if old_commit != new_commit:
-                new_commits = list(repo.iter_commits(f'{old_commit}..{new_commit}'))
-                changes = {
-                    'repo': repo_name,
-                    'status': 'updated_forced',
-                    'old_commit': old_commit,
-                    'new_commit': new_commit,
-                    'new_commits_count': len(new_commits),
-                    'new_commits': [{'hash': c.hexsha, 'message': c.message.strip(), 'author': c.author.name} for c in new_commits]
-                }
-            else:
-                changes = {'repo': repo_name, 'status': 'no_changes'}
-        except GitCommandError as e2:
-            changes = {'repo': repo_name, 'status': 'error', 'message': f"Failed to update: {str(e2)}"}
-    return changes
-
-def get_last_commit_summary(repo_name):
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
-    if not os.path.exists(repo_path):
-        return {'repo': repo_name, 'status': 'not_cloned'}
-    try:
-        repo = Repo(repo_path)
-        commit = repo.head.commit
-        summary = {
-            'repo': repo_name,
-            'last_commit': {
-                'hash': commit.hexsha,
-                'message': commit.message.strip(),
-                'author': commit.author.name,
-                'date': commit.authored_datetime.isoformat()
-            }
-        }
-        return summary
-    except Exception as e:
-        return {'repo': repo_name, 'status': 'error', 'message': str(e)}
-
-def view_commit_history(repo_name):
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
-    if not os.path.exists(repo_path):
-        print(f"Repository {repo_name} not cloned.")
-        return
-    try:
-        repo = Repo(repo_path)
-        commits = list(repo.iter_commits())
-        if commits:
-            print(f"Commit history for {repo_name}:")
-            for commit in commits:
-                print(f"{commit.hexsha[:7]} {commit.authored_datetime.isoformat()} {commit.author.name}: {commit.message.strip()}")
-        else:
-            print(f"No commits in {repo_name}.")
-    except Exception as e:
-        print(f"Error viewing history: {str(e)}")
-
-def reclone_repo(repo_name):
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
-    env = os.environ.copy()
-    env['GIT_CONFIG_PARAMETERS'] = 'core.longpaths=true core.quotepath=false'
-    try:
-        if os.path.exists(repo_path):
-            max_retries = 5
-            for attempt in range(max_retries):
-                try:
-                    shutil.rmtree(repo_path)
-                    break
-                except OSError as e:
-                    if attempt < max_retries - 1:
-                        time.sleep(2)
-                    else:
-                        raise e
-        Repo.clone_from(f'https://github.com/{repo_name}.git', repo_path, env=env)
-        return {'repo': repo_name, 'status': 'recloned'}
-    except Exception as e:
-        if 'WinError 5' in str(e) or 'Access denied' in str(e):
-            message = f"Access denied while deleting repository directory. Please ensure no other processes are using the files (e.g., close Git GUI, file explorer, or antivirus). You may need to manually delete the folder '{repo_path}' and try again. Original error: {str(e)}"
-        else:
-            message = str(e)
-        return {'repo': repo_name, 'status': 'error', 'message': message}
+init_git_operations(REPOS_DIR, MAX_RETRIES, RETRY_DELAY)
+init_search(REPOS_DIR)
 
 def show_menu():
-    print("\nMenu:")
+    """Display the main menu"""
+    print("\n" + "="*60)
+    print("REPOSITORY CLONER & UPDATER")
+    print("="*60)
     print("1. Clone all repositories (only if not cloned)")
     print("2. Update all repositories")
     print("3. Show last commit summary for all repositories")
     print("4. View commit history for a selected repository")
     print("5. Reclone a specific repository")
-    print("6. Exit")
+    print("6. Export commit summaries to JSON")
+    print("7. Show repository statistics")
+    print("8. Filter repositories by name pattern")
+    print("9. Search in commit messages across repositories")
+    print("10. Exit")
+    print("="*60)
+
+def process_repos_parallel(repos: List[str], operation_func, operation_name: str):
+    """Process repositories in parallel"""
+    completed = 0
+    lock = threading.Lock()
+    results = []
+    
+    def process_with_progress(repo):
+        nonlocal completed
+        result = operation_func(repo)
+        with lock:
+            completed += 1
+            if operation_name == 'clone':
+                status_icon = "✓" if result.get('status') in ['cloned', 'already_cloned'] else "✗"
+                print_progress(completed, len(repos), repo, f"{status_icon} {result.get('status')}")
+            elif operation_name == 'update':
+                status_icon = "✓" if result.get('status') in ['updated', 'updated_forced', 'no_changes'] else "✗"
+                commits_info = f" ({result.get('new_commits_count', 0)} new)" if result.get('new_commits_count', 0) > 0 else ""
+                print_progress(completed, len(repos), repo, f"{status_icon} {result.get('status')}{commits_info}")
+        return result
+    
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_repo = {executor.submit(process_with_progress, repo): repo for repo in repos}
+        for future in as_completed(future_to_repo):
+            results.append(future.result())
+    
+    return results
+
+def process_repos_sequential(repos: List[str], operation_func, operation_name: str):
+    """Process repositories sequentially"""
+    results = []
+    for i, repo in enumerate(repos, 1):
+        if operation_name == 'clone':
+            print_progress(i, len(repos), repo, "cloning...")
+        elif operation_name == 'update':
+            print_progress(i, len(repos), repo, "updating...")
+        result = operation_func(repo)
+        results.append(result)
+        if operation_name == 'clone':
+            status_icon = "✓" if result.get('status') in ['cloned', 'already_cloned'] else "✗"
+            print_progress(i, len(repos), repo, f"{status_icon} {result.get('status')}")
+        elif operation_name == 'update':
+            status_icon = "✓" if result.get('status') in ['updated', 'updated_forced', 'no_changes'] else "✗"
+            commits_info = f" ({result.get('new_commits_count', 0)} new)" if result.get('new_commits_count', 0) > 0 else ""
+            print_progress(i, len(repos), repo, f"{status_icon} {result.get('status')}{commits_info}")
+    return results
 
 def main():
+    """Main application loop"""
+    logger.info("Starting ReposCloner application")
     if not os.path.exists(REPOS_DIR):
         os.makedirs(REPOS_DIR)
+        logger.info(f"Created repositories directory: {REPOS_DIR}")
     
-    repos = load_repos()
+    repos = load_repos(config['repos_file'])
+    
+    if not repos:
+        print("No repositories found in repos.txt. Please add repositories and try again.")
+        logger.warning("No repositories found in repos.txt")
+        return
     
     while True:
         show_menu()
         choice = input("Choose an option: ").strip()
         
         if choice == '1':
-            results = []
-            for repo in repos:
-                result = clone_repo(repo)
-                results.append(result)
-                print(json.dumps(result, indent=2))
-            with open('changes_results.json', 'w') as f:
-                json.dump(results, f, indent=2)
+            use_parallel = input(f"Use parallel processing? (y/n, default={'y' if config['auto_parallel'] else 'n'}): ").strip().lower()
+            if not use_parallel:
+                parallel = config['auto_parallel']
+            else:
+                parallel = use_parallel != 'n'
+            
+            print(f"\nCloning {len(repos)} repositories...")
+            if parallel:
+                results = process_repos_parallel(repos, clone_repo, 'clone')
+            else:
+                results = process_repos_sequential(repos, clone_repo, 'clone')
+            
+            print()  # New line after progress
+            print_summary(results, "clone")
+            with open('changes_results.json', 'w', encoding='utf-8') as f:
+                json.dump(results, f, indent=2, ensure_ascii=False)
+            print("Results saved to changes_results.json")
         
         elif choice == '2':
-            results = []
-            for repo in repos:
-                result = update_repo(repo)
-                results.append(result)
-                print(json.dumps(result, indent=2))
-            with open('changes_results.json', 'w') as f:
-                json.dump(results, f, indent=2)
+            use_parallel = input(f"Use parallel processing? (y/n, default={'y' if config['auto_parallel'] else 'n'}): ").strip().lower()
+            if not use_parallel:
+                parallel = config['auto_parallel']
+            else:
+                parallel = use_parallel != 'n'
+            
+            print(f"\nUpdating {len(repos)} repositories...")
+            if parallel:
+                results = process_repos_parallel(repos, update_repo, 'update')
+            else:
+                results = process_repos_sequential(repos, update_repo, 'update')
+            
+            print()  # New line after progress
+            print_summary(results, "update")
+            with open('changes_results.json', 'w', encoding='utf-8') as f:
+                json.dump(results, f, indent=2, ensure_ascii=False)
+            print("Results saved to changes_results.json")
         
         elif choice == '3':
+            print(f"\nFetching last commit summaries for {len(repos)} repositories...")
             summaries = []
-            for repo in repos:
+            for i, repo in enumerate(repos, 1):
+                print_progress(i, len(repos), repo, "fetching...")
                 summary = get_last_commit_summary(repo)
                 summaries.append(summary)
-                print(json.dumps(summary, indent=2))
+            print()  # New line after progress
+            print("\nLast Commit Summaries:")
+            print("-" * 80)
+            for summary in summaries:
+                if 'last_commit' in summary:
+                    commit = summary['last_commit']
+                    date = datetime.fromisoformat(commit['date']).strftime('%Y-%m-%d %H:%M')
+                    print(f"\n{summary['repo']}:")
+                    print(f"  Hash: {commit['hash'][:7]}")
+                    print(f"  Date: {date}")
+                    print(f"  Author: {commit['author']}")
+                    print(f"  Message: {commit['message'][:100]}{'...' if len(commit['message']) > 100 else ''}")
+                elif summary.get('status') == 'not_cloned':
+                    print(f"\n{summary['repo']}: Not cloned")
+                elif summary.get('status') == 'error':
+                    print(f"\n{summary['repo']}: Error - {summary.get('message', 'Unknown')}")
+            print("-" * 80)
         
         elif choice == '4':
-            print("Available repositories:")
+            if not repos:
+                print("No repositories available.")
+                continue
+            print("\nAvailable repositories:")
             for i, repo in enumerate(repos, 1):
-                print(f"{i}. {repo}")
+                repo_path = os.path.join(REPOS_DIR, repo.replace('/', '_'))
+                status = "✓" if os.path.exists(repo_path) else "✗"
+                print(f"{i:2d}. [{status}] {repo}")
             try:
-                idx = int(input("Select repository number: ")) - 1
+                idx = int(input("\nSelect repository number: ")) - 1
                 if 0 <= idx < len(repos):
-                    view_commit_history(repos[idx])
+                    limit_input = input(f"Limit number of commits (press Enter for {DEFAULT_COMMIT_LIMIT}): ").strip()
+                    limit = int(limit_input) if limit_input.isdigit() else DEFAULT_COMMIT_LIMIT
+                    view_commit_history(repos[idx], limit)
                 else:
                     print("Invalid number.")
             except ValueError:
                 print("Invalid input.")
         
         elif choice == '5':
+            if not repos:
+                print("No repositories available.")
+                continue
             print("Available repositories:")
             for i, repo in enumerate(repos, 1):
                 print(f"{i}. {repo}")
@@ -203,10 +211,113 @@ def main():
                 print("Invalid input.")
         
         elif choice == '6':
+            print(f"\nExporting commit summaries for {len(repos)} repositories...")
+            summaries = []
+            for i, repo in enumerate(repos, 1):
+                print_progress(i, len(repos), repo, "exporting...")
+                summary = get_last_commit_summary(repo)
+                summaries.append(summary)
+            print()  # New line after progress
+            
+            filename = f"commit_summaries_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'export_date': datetime.now().isoformat(),
+                    'total_repos': len(repos),
+                    'summaries': summaries
+                }, f, indent=2, ensure_ascii=False)
+            print(f"\nExport completed! Saved to {filename}")
+        
+        elif choice == '7':
+            print("\nRepository Statistics:")
+            print("-" * 80)
+            cloned_count = 0
+            total_size = 0
+            total_commits = 0
+            
+            from git import Repo as GitRepo
+            for repo_name in repos:
+                repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
+                if os.path.exists(repo_path):
+                    cloned_count += 1
+                    try:
+                        repo = GitRepo(repo_path)
+                        # Calculate directory size
+                        repo_size = sum(
+                            os.path.getsize(os.path.join(dirpath, filename))
+                            for dirpath, dirnames, filenames in os.walk(repo_path)
+                            for filename in filenames
+                        )
+                        total_size += repo_size
+                        # Count commits
+                        commit_count = sum(1 for _ in repo.iter_commits())
+                        total_commits += commit_count
+                    except Exception:
+                        pass
+            
+            print(f"Total repositories in list: {len(repos)}")
+            print(f"Cloned repositories: {cloned_count}")
+            print(f"Not cloned: {len(repos) - cloned_count}")
+            print(f"Total size: {total_size / (1024*1024):.2f} MB")
+            print(f"Total commits: {total_commits}")
+            if cloned_count > 0:
+                print(f"Average commits per repo: {total_commits / cloned_count:.1f}")
+            print("-" * 80)
+        
+        elif choice == '8':
+            pattern = input("\nEnter repository name pattern (regex supported, case-insensitive): ").strip()
+            if pattern:
+                filtered_repos = filter_repos(repos, pattern)
+                if filtered_repos:
+                    print(f"\nFound {len(filtered_repos)} repositories matching '{pattern}':")
+                    print("-" * 60)
+                    for i, repo in enumerate(filtered_repos, 1):
+                        repo_path = os.path.join(REPOS_DIR, repo.replace('/', '_'))
+                        status = "✓ Cloned" if os.path.exists(repo_path) else "✗ Not cloned"
+                        print(f"{i:2d}. [{status}] {repo}")
+                    print("-" * 60)
+                    
+                    use_filtered = input("\nUse filtered repositories for next operation? (y/n): ").strip().lower()
+                    if use_filtered == 'y':
+                        repos = filtered_repos
+                        print(f"Now working with {len(repos)} filtered repositories.")
+                else:
+                    print(f"No repositories found matching pattern '{pattern}'")
+            else:
+                print("No pattern provided.")
+        
+        elif choice == '9':
+            query = input("\nEnter search query (searches in commit messages): ").strip()
+            if query:
+                print(f"\nSearching for '{query}' in commit messages...")
+                results = search_in_repos(query, repos)
+                if results:
+                    print(f"\nFound {len(results)} repositories with matching commits:")
+                    print("=" * 80)
+                    total_matches = 0
+                    for result in results:
+                        total_matches += result['count']
+                        print(f"\n{result['repo']} ({result['count']} matches):")
+                        print("-" * 80)
+                        for match in result['matches'][:10]:  # Show first 10 matches per repo
+                            date = datetime.fromisoformat(match['date']).strftime('%Y-%m-%d %H:%M')
+                            print(f"  {match['hash']} | {date} | {match['author']:20s} | {match['message']}")
+                        if result['count'] > 10:
+                            print(f"  ... and {result['count'] - 10} more matches")
+                    print("=" * 80)
+                    print(f"Total: {total_matches} matches across {len(results)} repositories")
+                else:
+                    print(f"No commits found containing '{query}'")
+            else:
+                print("No search query provided.")
+        
+        elif choice == '10':
+            print("\nGoodbye!")
+            logger.info("Application exited by user")
             break
         
         else:
-            print("Invalid choice.")
+            print("Invalid choice. Please select a number from 1-10.")
 
 if __name__ == '__main__':
     main()
