@@ -6,19 +6,21 @@ loading happens inside :func:`main`, so the future GUI can reuse
 """
 
 import os
+import sys
 import json
 from datetime import datetime
 from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
-from reposcloner.config import load_config, setup_logging
+from reposcloner.config import is_debug_enabled, load_config, setup_logging
 from reposcloner.git_operations import (
     init_git_operations, clone_repo, update_repo, reclone_repo,
     get_last_commit_summary, view_commit_history
 )
+from reposcloner.i18n import get_lang, t
 from reposcloner.utils import print_summary, print_progress
-from reposcloner.search import init_search, filter_repos, search_in_repos
+from reposcloner.search import init_search, search_in_repos
 from reposcloner.repo_store import (
     TrackedRepo, WorkItem, load_tracked, save_tracked,
     import_repos_txt, discover_local_repos, resolve_work_list,
@@ -49,6 +51,7 @@ def load_inventory(config: Dict, logger=None):
 
     Returns (all_items, active_ids, tracked_path, tracked_entries).
     """
+    lang = get_lang(config)
     repos_dir = config['repos_dir']
     os.makedirs(repos_dir, exist_ok=True)
 
@@ -74,8 +77,7 @@ def load_inventory(config: Dict, logger=None):
             if migrated:
                 tracked = migrated
                 save_tracked(tracked_path, tracked)
-                print(f"Migrated {len(migrated)} repositories from {legacy_file} "
-                      f"to {tracked_path}. You can now delete {legacy_file}.")
+                print(t('migrated', lang, n=len(migrated), src=legacy_file, dst=tracked_path))
                 if logger:
                     logger.info(f"Migrated {len(migrated)} repos from {legacy_file}")
         except OSError as e:
@@ -86,22 +88,14 @@ def load_inventory(config: Dict, logger=None):
     return items, [i.repo_id for i in items], tracked_path, tracked
 
 
-def show_menu(active_count: int, total_count: int):
+def show_menu(active_count: int, total_count: int, lang: str):
     """Display the main menu"""
-    scope = f"{active_count}/{total_count} repos in scope" if active_count != total_count else f"{total_count} repositories"
+    scope = f"{active_count}/{total_count}" if active_count != total_count else f"{total_count}"
     print("\n" + "="*60)
-    print(f"REPOSITORY CLONER & UPDATER  ({scope})")
+    print(f"{t('m_title', lang)}  ({scope})")
     print("="*60)
-    print("1. Clone all repositories (only if not cloned)")
-    print("2. Update all repositories")
-    print("3. Show last commit summary for all repositories")
-    print("4. View commit history for a selected repository")
-    print("5. Reclone a specific repository")
-    print("6. Export commit summaries to JSON")
-    print("7. Show repository statistics")
-    print("8. Filter repositories by name pattern (empty input resets)")
-    print("9. Search in commit messages across repositories")
-    print("10. Exit")
+    for key in ('m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9'):
+        print(t(key, lang))
     print("="*60)
 
 
@@ -164,17 +158,18 @@ def save_results(results: List[Dict], prefix: str = 'changes_results') -> str:
     return filename
 
 
-def handle_conflicts(results: List[Dict], config: Dict) -> List[Dict]:
+def handle_conflicts(results: List[Dict], config: Dict, lang: str) -> List[Dict]:
     """Offer force-update for repos that reported a conflict. Returns updated results."""
     conflicts = [r for r in results if r.get('status') == 'conflict']
     if not conflicts:
         return results
-    print(f"\n{len(conflicts)} repositorie(s) have local changes blocking the update:")
+    print(f"\n{len(conflicts)}:")
+    print(t('conflict_list', lang))
     for r in conflicts:
         print(f"  - {r['repo']}")
-    answer = input("Discard local changes and force-update them? (y/N): ").strip().lower()
+    answer = input(t('force_q', lang)).strip().lower()
     if answer != 'y':
-        print("Kept local changes. Re-run with force after reviewing.")
+        print(t('force_skip', lang))
         return results
     forced = []
     for r in conflicts:
@@ -183,11 +178,25 @@ def handle_conflicts(results: List[Dict], config: Dict) -> List[Dict]:
     return [by_repo.get(r['repo'], r) for r in results]
 
 
+def _parallel_choice(config: Dict, lang: str) -> bool:
+    default = 'y' if config['auto_parallel'] else 'n'
+    answer = input(t('parallel_q', lang, d=default)).strip().lower()
+    if not answer:
+        return config['auto_parallel']
+    return answer != 'n'
+
+
 def main(config: Optional[Dict] = None):
     """Main application loop"""
     runtime = build_runtime(config)
     config = runtime['config']
     logger = runtime['logger']
+    lang = get_lang(config)
+    if '--debug' in sys.argv:
+        config['debug'] = True
+    debug = is_debug_enabled(config)
+    if debug:
+        print(t('debug_on', lang))
     logger.info("Starting ReposCloner application")
 
     repos_dir = _work_repos_dir(config)
@@ -195,63 +204,60 @@ def main(config: Optional[Dict] = None):
     all_ids = [i.repo_id for i in all_items]
     repos = list(active_ids)
 
-    if not all_ids and not os.listdir(repos_dir):
-        print("No repositories found. Clone one via option 1 after adding it to "
-              f"{tracked_path}, or place checkouts in {repos_dir}.")
+    if not all_ids:
+        print(t('empty_inv', lang))
         logger.warning("Empty inventory: nothing discovered or tracked")
-    elif not all_ids:
-        print(f"Discovered {len(discover_local_repos(repos_dir))} local checkouts.")
 
     while True:
-        show_menu(len(repos), len(all_ids))
-        choice = input("Choose an option: ").strip()
+        show_menu(len(repos), len(all_ids), lang)
+        choice = input(t('choose_opt', lang)).strip()
 
         if choice == '1':
-            use_parallel = input(f"Use parallel processing? (y/n, default={'y' if config['auto_parallel'] else 'n'}): ").strip().lower()
-            if not use_parallel:
-                parallel = config['auto_parallel']
-            else:
-                parallel = use_parallel != 'n'
-
-            print(f"\nCloning {len(repos)} repositories...")
+            parallel = _parallel_choice(config, lang)
+            depth = None
+            if debug and input(t('shallow_q', lang)).strip().lower() == 'y':
+                depth = 1
+            clone_fn = (lambda repo: clone_repo(repo, depth=depth)) if depth else clone_repo
+            print(f"\n{t('cloning_n', lang, n=len(repos))}")
             if parallel:
-                results = process_repos_parallel(repos, clone_repo, 'clone', config)
+                results = process_repos_parallel(repos, clone_fn, 'clone', config)
             else:
-                results = process_repos_sequential(repos, clone_repo, 'clone', config)
+                results = process_repos_sequential(repos, clone_fn, 'clone', config)
 
             print()  # New line after progress
-            print_summary(results, "clone")
+            print_summary(results, "clone", lang)
+            if debug:
+                print(t('debug_raw', lang))
+                print(json.dumps(results, indent=2, ensure_ascii=False))
             filename = save_results(results)
-            print(f"Results saved to {filename}")
+            print(t('results_saved', lang, f=filename))
 
         elif choice == '2':
-            use_parallel = input(f"Use parallel processing? (y/n, default={'y' if config['auto_parallel'] else 'n'}): ").strip().lower()
-            if not use_parallel:
-                parallel = config['auto_parallel']
-            else:
-                parallel = use_parallel != 'n'
-
-            print(f"\nUpdating {len(repos)} repositories...")
+            parallel = _parallel_choice(config, lang)
+            print(f"\n{t('updating_n', lang, n=len(repos))}")
             if parallel:
                 results = process_repos_parallel(repos, update_repo, 'update', config)
             else:
                 results = process_repos_sequential(repos, update_repo, 'update', config)
-            results = handle_conflicts(results, config)
+            results = handle_conflicts(results, config, lang)
 
             print()  # New line after progress
-            print_summary(results, "update")
+            print_summary(results, "update", lang)
+            if debug:
+                print(t('debug_raw', lang))
+                print(json.dumps(results, indent=2, ensure_ascii=False))
             filename = save_results(results)
-            print(f"Results saved to {filename}")
+            print(t('results_saved', lang, f=filename))
 
         elif choice == '3':
-            print(f"\nFetching last commit summaries for {len(repos)} repositories...")
+            print(f"\n{t('fetching_n', lang, n=len(repos))}")
             summaries = []
             for i, repo in enumerate(repos, 1):
                 print_progress(i, len(repos), repo, "fetching...")
                 summary = get_last_commit_summary(repo)
                 summaries.append(summary)
             print()  # New line after progress
-            print("\nLast Commit Summaries:")
+            print(f"\n{t('last_title', lang)}")
             print("-" * 80)
             for summary in summaries:
                 if 'last_commit' in summary:
@@ -263,54 +269,54 @@ def main(config: Optional[Dict] = None):
                     print(f"  Author: {commit['author']}")
                     print(f"  Message: {commit['message'][:100]}{'...' if len(commit['message']) > 100 else ''}")
                 elif summary.get('status') == 'not_cloned':
-                    print(f"\n{summary['repo']}: Not cloned")
+                    print(f"\n{summary['repo']}: {t('not_cloned_l', lang)}")
                 elif summary.get('status') in ('error', 'conflict'):
                     print(f"\n{summary['repo']}: {summary.get('status')} - {summary.get('message', 'Unknown')}")
             print("-" * 80)
 
         elif choice == '4':
             if not repos:
-                print("No repositories available.")
+                print(t('no_repos', lang))
                 continue
-            print("\nAvailable repositories:")
+            print(f"\n{t('avail_repos', lang)}")
             for i, repo in enumerate(repos, 1):
                 item = next((x for x in all_items if x.repo_id == repo), None)
                 status = "✓" if (item and item.cloned) else "✗"
                 print(f"{i:2d}. [{status}] {repo}")
             try:
-                idx = int(input("\nSelect repository number: ")) - 1
+                idx = int(input(f"\n{t('sel_num', lang)}")) - 1
                 if 0 <= idx < len(repos):
-                    limit_input = input(f"Limit number of commits (press Enter for {config['default_commit_limit']}): ").strip()
+                    limit_input = input(t('limit_q', lang, d=config['default_commit_limit'])).strip()
                     limit = int(limit_input) if limit_input.isdigit() else config['default_commit_limit']
                     view_commit_history(repos[idx], limit)
                 else:
-                    print("Invalid number.")
+                    print(t('invalid_num', lang))
             except ValueError:
-                print("Invalid input.")
+                print(t('invalid_input', lang))
 
         elif choice == '5':
             if not repos:
-                print("No repositories available.")
+                print(t('no_repos', lang))
                 continue
-            print("Available repositories:")
+            print(t('avail_repos', lang))
             for i, repo in enumerate(repos, 1):
                 print(f"{i}. {repo}")
             try:
-                idx = int(input("Select repository number to reclone: ")) - 1
+                idx = int(input(t('sel_reclone', lang))) - 1
                 if 0 <= idx < len(repos):
-                    confirm = input(f"Delete local copy of {repos[idx]} and clone again? (y/N): ").strip().lower()
+                    confirm = input(t('reclone_confirm', lang, r=repos[idx])).strip().lower()
                     if confirm != 'y':
-                        print("Cancelled.")
+                        print(t('cancelled', lang))
                         continue
                     result = reclone_repo(repos[idx])
                     print(json.dumps(result, indent=2))
                 else:
-                    print("Invalid number.")
+                    print(t('invalid_num', lang))
             except ValueError:
-                print("Invalid input.")
+                print(t('invalid_input', lang))
 
         elif choice == '6':
-            print(f"\nExporting commit summaries for {len(repos)} repositories...")
+            print(f"\n{t('exporting_n', lang, n=len(repos))}")
             summaries = []
             for i, repo in enumerate(repos, 1):
                 print_progress(i, len(repos), repo, "exporting...")
@@ -325,10 +331,10 @@ def main(config: Optional[Dict] = None):
                     'total_repos': len(repos),
                     'summaries': summaries
                 }, f, indent=2, ensure_ascii=False)
-            print(f"\nExport completed! Saved to {filename}")
+            print(f"\n{t('export_done', lang, f=filename)}")
 
         elif choice == '7':
-            print("\nRepository Statistics:")
+            print(f"\n{t('stats_title', lang)}")
             print("-" * 80)
             cloned_count = 0
             total_size = 0
@@ -355,76 +361,47 @@ def main(config: Optional[Dict] = None):
                     except Exception:
                         pass
 
-            print(f"Total repositories in scope: {len(repos)} (tracked total: {len(all_ids)})")
-            print(f"Cloned repositories: {cloned_count}")
-            print(f"Not cloned: {len(repos) - cloned_count}")
-            print(f"Total size: {total_size / (1024*1024):.2f} MB")
-            print(f"Total commits: {total_commits}")
+            print(t('s_total', lang, n=len(repos)) + f" ({len(all_ids)})")
+            print(t('s_cloned', lang, n=cloned_count))
+            print(t('s_not', lang, n=len(repos) - cloned_count))
+            print(t('s_size', lang, mb=total_size / (1024*1024)))
+            print(t('s_commits', lang, n=total_commits))
             if cloned_count > 0:
-                print(f"Average commits per repo: {total_commits / cloned_count:.1f}")
+                print(t('s_avg', lang, n=total_commits / cloned_count))
             print("-" * 80)
 
         elif choice == '8':
-            pattern = input("\nEnter repository name pattern (regex, case-insensitive; empty resets): ").strip()
-            if not pattern:
-                repos = list(all_ids)
-                print(f"Scope reset to all {len(repos)} repositories.")
-                continue
-            if pattern:
-                filtered = filter_repos(all_ids, pattern)
-                if filtered:
-                    print(f"\nFound {len(filtered)} repositories matching '{pattern}':")
-                    print("-" * 60)
-                    for i, repo in enumerate(filtered, 1):
-                        item = next((x for x in all_items if x.repo_id == repo), None)
-                        status = "✓ Cloned" if (item and item.cloned) else "✗ Not cloned"
-                        print(f"{i:2d}. [{status}] {repo}")
-                    print("-" * 60)
-
-                    use_filtered = input("\nUse filtered repositories? ([y]es / [n]o / [r]eset): ").strip().lower()
-                    if use_filtered == 'y':
-                        repos = filtered
-                        print(f"Now working with {len(repos)} filtered repositories.")
-                    elif use_filtered == 'r':
-                        repos = list(all_ids)
-                        print(f"Scope reset to all {len(repos)} repositories.")
-                else:
-                    print(f"No repositories found matching pattern '{pattern}'")
-            else:
-                print("No pattern provided.")
-
-        elif choice == '9':
-            query = input("\nEnter search query (searches in commit messages): ").strip()
+            query = input(f"\n{t('search_q', lang)}").strip()
             if query:
-                print(f"\nSearching for '{query}' in commit messages...")
+                print(f"\n{t('searching_q', lang, q=query)}")
                 results = search_in_repos(query, repos)
                 if results:
-                    print(f"\nFound {len(results)} repositories with matching commits:")
+                    print(f"\n{t('found_repos', lang, n=len(results))}")
                     print("=" * 80)
                     total_matches = 0
                     for result in results:
                         total_matches += result['count']
-                        print(f"\n{result['repo']} ({result['count']} matches):")
+                        print(f"\n{result['repo']} ({result['count']}):")
                         print("-" * 80)
                         for match in result['matches'][:10]:  # Show first 10 matches per repo
                             date = datetime.fromisoformat(match['date']).strftime('%Y-%m-%d %H:%M')
                             print(f"  {match['hash']} | {date} | {match['author']:20s} | {match['message']}")
                         if result['count'] > 10:
-                            print(f"  ... and {result['count'] - 10} more matches")
+                            print(t('more_matches', lang, k=result['count'] - 10))
                     print("=" * 80)
-                    print(f"Total: {total_matches} matches across {len(results)} repositories")
+                    print(t('total_matches', lang, t=total_matches, r=len(results)))
                 else:
-                    print(f"No commits found containing '{query}'")
+                    print(t('no_match', lang, q=query))
             else:
-                print("No search query provided.")
+                print(t('no_query', lang))
 
-        elif choice == '10':
-            print("\nGoodbye!")
+        elif choice == '9':
+            print(f"\n{t('goodbye', lang)}")
             logger.info("Application exited by user")
             break
 
         else:
-            print("Invalid choice. Please select a number from 1-10.")
+            print(t('invalid_choice', lang))
 
 
 if __name__ == '__main__':

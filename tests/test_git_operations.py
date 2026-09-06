@@ -74,7 +74,8 @@ class FakeRepo:
         FakeRepo.instances.append(self)
 
     @classmethod
-    def clone_from(cls, url, path):
+    def clone_from(cls, url, path, **kwargs):
+        cls.clone_calls.append({'url': url, 'path': path, **kwargs})
         if cls.clone_from_side_effect is not None:
             raise cls.clone_from_side_effect
         os.makedirs(path, exist_ok=True)
@@ -87,6 +88,7 @@ class FakeRepo:
 @pytest.fixture(autouse=True)
 def fake_repo(monkeypatch):
     FakeRepo.instances = []
+    FakeRepo.clone_calls = []
     FakeRepo.clone_from_side_effect = None
     FakeRepo.head_commit = FakeCommit(hexsha='aaa')
     FakeRepo.commits_range = []
@@ -125,6 +127,13 @@ def test_clone_already_cloned(repos_dir):
 def test_clone_success(repos_dir):
     result = git_operations.clone_repo('alice/notes', repos_dir=repos_dir)
     assert result == {'repo': 'alice/notes', 'status': 'cloned'}
+
+
+def test_clone_forwards_depth(repos_dir):
+    result = git_operations.clone_repo('alice/notes', repos_dir=repos_dir, depth=1)
+    assert result['status'] == 'cloned'
+    assert FakeRepo.clone_calls[-1]['depth'] == 1
+    assert FakeRepo.clone_calls[-1]['url'] == 'https://github.com/alice/notes.git'
 
 
 def test_clone_failure_returns_error(repos_dir):
@@ -185,6 +194,57 @@ def test_update_force_reports_new_commits(repos_dir, monkeypatch):
     assert result['status'] == 'updated_forced'
     assert result['new_commits_count'] == 1
     assert result['new_commits'][0]['author'] == 'Bob'
+
+
+# --- history -----------------------------------------------------------------
+
+def test_commit_history_not_cloned(repos_dir):
+    result = git_operations.get_commit_history('a/b', repos_dir=repos_dir)
+    assert result['status'] == 'not_cloned'
+    assert result['commits'] == []
+
+
+def test_commit_history_ok_with_limit(repos_dir):
+    _checkout(repos_dir, 'alice/notes')
+    FakeRepo.commits_range = [
+        FakeCommit(hexsha='111', message='first'),
+        FakeCommit(hexsha='222', message='second'),
+    ]
+    result = git_operations.get_commit_history('alice/notes', limit=10, repos_dir=repos_dir)
+    assert result['status'] == 'ok'
+    assert result['count'] == 2
+    assert result['commits'][0]['short_hash'] == '111'
+    assert result['commits'][1]['message'] == 'second'
+
+
+def test_commit_history_invalid_id(repos_dir):
+    assert git_operations.get_commit_history('../x', repos_dir=repos_dir)['status'] == 'error'
+
+
+# --- delete ------------------------------------------------------------------
+
+def test_delete_not_cloned(repos_dir):
+    assert git_operations.delete_repo_checkout('a/b', repos_dir=repos_dir)['status'] == 'not_cloned'
+
+
+def test_delete_invalid_id(repos_dir):
+    assert git_operations.delete_repo_checkout('../x', repos_dir=repos_dir)['status'] == 'error'
+
+
+def test_delete_removes_directory(repos_dir):
+    path = _checkout(repos_dir, 'alice/notes')
+    with open(os.path.join(path, 'file.txt'), 'w') as f:
+        f.write('data')
+    result = git_operations.delete_repo_checkout('alice/notes', repos_dir=repos_dir)
+    assert result == {'repo': 'alice/notes', 'status': 'deleted'}
+    assert not os.path.exists(path)
+
+
+def test_delete_recognises_legacy_dir(repos_dir):
+    path = _checkout(repos_dir, 'alice/notes', scheme='_')
+    result = git_operations.delete_repo_checkout('alice/notes', repos_dir=repos_dir)
+    assert result['status'] == 'deleted'
+    assert not os.path.exists(path)
 
 
 # --- summaries --------------------------------------------------------------

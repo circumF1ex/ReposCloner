@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Local web console for teachers (`web.py`, Streamlit): repository inventory
+  with working scope, parallel clone/update with progress, conflict
+  force-update flow, commit viewer, commit-message search, statistics.
+- `reposcloner/report.py`: standalone HTML dashboard builder + download from
+  the web console (no server needed to view the exported file).
+- `get_commit_history()` data API in `git_operations` (the print-only
+  `view_commit_history` remains for the CLI).
+- `delete_repo_checkout()` in `git_operations` + "Danger zone" in the web
+  console: remove a repo from the tracked list, optionally deleting its
+  local files (with confirmation checkbox).
+- Operations in the web console now refresh the inventory table immediately
+  and report results via persistent notices.
+- `requirements-web.txt`, `start-web.bat` launcher.
+- `repos.json` (the private wanted-list) is git-ignored: inventory comes from
+  filesystem discovery plus one-by-one adding in the UI, never from commits.
+- EN/RU localization (`reposcloner/i18n.py`, Russian primary and default):
+  full web console in both languages with a sidebar switcher persisted to
+  `config.json`, CLI menu and summaries in both languages.
+- "Debug info" panel in the web console: environment paths plus raw
+  per-repo JSON of the last clone/update.
+
+### Changed
+- Pattern-based repository filtering removed from the CLI menu and the web
+  console (the working-scope multiselect covers narrowing down the set).
+- Debug tooling is hidden behind a switch instead of a separate branch:
+  `REPOSCLONER_DEBUG=1`, CLI `--debug`, or web `?debug=1` enables the
+  shallow-clone option, raw-result dumps (CLI) and the Debug info panel
+  (web). Off by default; `clone_repo(..., depth=1)` stays in the core.
+
+### Fixed
+- Web Update notice no longer shows silent "0 of everything" when repos are
+  not cloned yet — it now says how many are missing and points at Clone.
+
 ## [1.1.0] - 2026-09-07
 
 ### Added

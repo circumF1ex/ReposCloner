@@ -8,5 +8,7 @@
   "log_file": "reposcloner.log",
   "log_level": "INFO",
   "auto_parallel": true,
-  "default_commit_limit": 50
+  "default_commit_limit": 50,
+  "language": "ru",
+  "debug": false
 }

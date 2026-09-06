@@ -17,7 +17,6 @@ A powerful Python tool for cloning, updating, and managing multiple GitHub repos
 - 📈 **Summary Statistics**: Detailed statistics after batch operations
 - 🔄 **Retry Logic**: Automatic retries for failed operations
 - 🔍 **Search**: Search commit messages across all repositories
-- 🎯 **Filtering**: Filter repositories by name pattern (regex supported)
 - 📝 **Logging**: Comprehensive logging system for debugging
 - ⚙️ **Configuration**: Customizable settings via config.json
 
@@ -75,24 +74,16 @@ python main.py
    - **Option 5**: Reclone a specific repository
    - **Option 6**: Export commit summaries
    - **Option 7**: Show repository statistics
-   - **Option 8**: Filter repositories by pattern
-   - **Option 9**: Search in commit messages
-   - **Option 10**: Exit
+   - **Option 8**: Search in commit messages
+   - **Option 9**: Exit
 
 ### Parallel Processing
 
 When cloning or updating, you'll be asked if you want to use parallel processing. This significantly speeds up operations when working with many repositories.
 
-### Filtering Repositories
-
-Use option 8 to filter repositories by name pattern. Supports regex patterns:
-- `konspekt` - Find all repos containing "konspekt"
-- `^artem` - Find repos starting with "artem"
-- `RPO|notes` - Find repos containing "RPO" or "notes"
-
 ### Searching Commits
 
-Use option 9 to search for text in commit messages across all repositories. Useful for finding specific topics or changes.
+Use option 8 to search for text in commit messages across all repositories. Useful for finding specific topics or changes.
 
 ## File Structure
 
@@ -126,17 +117,9 @@ Logs are written to `reposcloner.log` (configurable). Log levels:
 
 ### Search for specific topic
 ```
-1. Choose option 9
+1. Choose option 8
 2. Enter search query (e.g., "homework", "lecture")
 3. View matching commits across all repositories
-```
-
-### Filter and update specific repositories
-```
-1. Choose option 8
-2. Enter pattern (e.g., "RPO")
-3. Choose 'y' to use filtered list
-4. Choose option 2 to update only filtered repos
 ```
 
 ## Troubleshooting

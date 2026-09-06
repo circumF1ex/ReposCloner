@@ -39,8 +39,17 @@ def _resolve_dir(repos_dir: Optional[str], repo_name: str) -> str:
     return repo_path_for(base, repo_name)
 
 
-def clone_repo(repo_name: str, retry_count: int = 0, repos_dir: Optional[str] = None) -> Dict:
-    """Clone a repository from GitHub."""
+def clone_repo(
+    repo_name: str,
+    retry_count: int = 0,
+    repos_dir: Optional[str] = None,
+    depth: Optional[int] = None,
+) -> Dict:
+    """Clone a repository from GitHub.
+
+    ``depth=1`` makes a shallow snapshot (fast; history-dependent features
+    are limited on such checkouts). Exposed in the UI only in debug mode.
+    """
     try:
         repo_path = _resolve_dir(repos_dir, repo_name)
     except ValueError as e:
@@ -50,7 +59,8 @@ def clone_repo(repo_name: str, retry_count: int = 0, repos_dir: Optional[str] = 
         return {'repo': repo_name, 'status': 'already_cloned'}
     try:
         logger.info(f"Cloning repository {repo_name}")
-        Repo.clone_from(f'https://github.com/{repo_name}.git', repo_path)
+        clone_kwargs = {'depth': depth} if depth else {}
+        Repo.clone_from(f'https://github.com/{repo_name}.git', repo_path, **clone_kwargs)
         # Configure git settings after cloning
         repo = Repo(repo_path)
         repo.git.config('core.longpaths', 'true')
@@ -61,7 +71,7 @@ def clone_repo(repo_name: str, retry_count: int = 0, repos_dir: Optional[str] = 
         logger.warning(f"Error cloning {repo_name} (attempt {retry_count + 1}): {str(e)}")
         if retry_count < MAX_RETRIES:
             time.sleep(RETRY_DELAY)
-            return clone_repo(repo_name, retry_count + 1, repos_dir)
+            return clone_repo(repo_name, retry_count + 1, repos_dir, depth)
         logger.error(f"Failed to clone {repo_name} after {MAX_RETRIES} attempts")
         return {'repo': repo_name, 'status': 'error', 'message': str(e)}
 
@@ -171,6 +181,34 @@ def get_last_commit_summary(repo_name: str, repos_dir: Optional[str] = None) -> 
         return {'repo': repo_name, 'status': 'error', 'message': str(e)}
 
 
+def get_commit_history(
+    repo_name: str,
+    limit: Optional[int] = None,
+    repos_dir: Optional[str] = None,
+) -> Dict:
+    """Return commit history data (list of dicts) for programmatic use."""
+    from typing import List  # local import to keep module header stable
+    try:
+        repo_path = _resolve_dir(repos_dir, repo_name)
+    except ValueError as e:
+        return {'repo': repo_name, 'status': 'error', 'message': str(e)}
+    if not os.path.exists(repo_path):
+        return {'repo': repo_name, 'status': 'not_cloned', 'commits': []}
+    try:
+        repo = Repo(repo_path)
+        commits = list(repo.iter_commits(max_count=limit)) if limit else list(repo.iter_commits())
+        data: List[Dict] = [{
+            'hash': c.hexsha,
+            'short_hash': c.hexsha[:7],
+            'date': c.authored_datetime.isoformat(),
+            'author': c.author.name,
+            'message': c.message.strip(),
+        } for c in commits]
+        return {'repo': repo_name, 'status': 'ok', 'commits': data, 'count': len(data)}
+    except Exception as e:
+        return {'repo': repo_name, 'status': 'error', 'message': str(e), 'commits': []}
+
+
 def view_commit_history(repo_name: str, limit: Optional[int] = None, repos_dir: Optional[str] = None):
     """View commit history for a repository."""
     try:
@@ -196,6 +234,39 @@ def view_commit_history(repo_name: str, limit: Optional[int] = None, repos_dir: 
             print(f"No commits in {repo_name}.")
     except Exception as e:
         print(f"Error viewing history: {str(e)}")
+
+
+def delete_repo_checkout(repo_name: str, repos_dir: Optional[str] = None) -> Dict:
+    """Delete the local checkout directory (tracked entry is left alone).
+
+    Returns ``status: 'deleted'`` / ``'not_cloned'`` / ``'error'``.
+    """
+    try:
+        repo_path = _resolve_dir(repos_dir, repo_name)
+    except ValueError as e:
+        return {'repo': repo_name, 'status': 'error', 'message': str(e)}
+    if not os.path.exists(repo_path):
+        return {'repo': repo_name, 'status': 'not_cloned'}
+    try:
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                shutil.rmtree(repo_path)
+                break
+            except OSError as e:
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    raise e
+        logger.info(f"Deleted local checkout {repo_name}")
+        return {'repo': repo_name, 'status': 'deleted'}
+    except Exception as e:
+        if 'WinError 5' in str(e) or 'Access denied' in str(e):
+            message = (f"Access denied while deleting '{repo_path}'. Close file explorers, "
+                       f"Git GUIs or antivirus locks and try again. Original error: {e}")
+        else:
+            message = str(e)
+        return {'repo': repo_name, 'status': 'error', 'message': message}
 
 
 def reclone_repo(repo_name: str, repos_dir: Optional[str] = None) -> Dict:

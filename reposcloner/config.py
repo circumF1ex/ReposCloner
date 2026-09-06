@@ -16,7 +16,9 @@ DEFAULT_CONFIG = {
     'log_file': 'reposcloner.log',
     'log_level': 'INFO',
     'auto_parallel': True,
-    'default_commit_limit': 50
+    'default_commit_limit': 50,
+    'language': 'ru',
+    'debug': False,
 }
 
 def load_config() -> Dict:
@@ -31,6 +33,20 @@ def load_config() -> Dict:
             print(f"Warning: Error loading config.json: {e}. Using defaults.")
             return DEFAULT_CONFIG
     return DEFAULT_CONFIG
+
+def is_debug_enabled(config: Dict = None) -> bool:
+    """Hidden debug switch: env ``REPOSCLONER_DEBUG=1`` or ``debug: true`` in config."""
+    env = os.environ.get('REPOSCLONER_DEBUG', '').strip().lower()
+    if env in ('1', 'true', 'yes', 'on'):
+        return True
+    return bool((config or {}).get('debug', False))
+
+
+def save_config(config: Dict, path: str = CONFIG_FILE) -> None:
+    """Persist configuration (e.g. language chosen in the web console)."""
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+
 
 def setup_logging(config: Dict) -> logging.Logger:
     """Setup logging based on configuration"""

@@ -2,6 +2,8 @@
 
 import os
 from typing import List, Dict
+
+from .i18n import DEFAULT_LANGUAGE, t
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,7 +28,7 @@ def load_repos(repos_file: str) -> List[str]:
         print(f"Error reading {repos_file}: {str(e)}")
         return []
 
-def print_summary(results: List[Dict], operation: str):
+def print_summary(results: List[Dict], operation: str, lang: str = DEFAULT_LANGUAGE):
     """Print summary statistics after batch operations"""
     total = len(results)
     success = sum(1 for r in results if r.get('status') in ['cloned', 'updated', 'updated_forced', 'recloned', 'already_cloned', 'no_changes'])
@@ -36,20 +38,20 @@ def print_summary(results: List[Dict], operation: str):
     new_commits_total = sum(r.get('new_commits_count', 0) for r in results if 'new_commits_count' in r)
     
     print("\n" + "="*60)
-    print(f"SUMMARY - {operation.upper()}")
+    print(t('sum_title', lang, op=operation.upper()))
     print("="*60)
-    print(f"Total repositories: {total}")
-    print(f"Successful: {success}")
-    print(f"Errors: {errors}")
+    print(t('sum_total', lang, n=total))
+    print(t('sum_ok', lang, n=success))
+    print(t('sum_err', lang, n=errors))
     if conflicts:
-        print(f"Conflicts (local changes kept): {conflicts}")
+        print(t('sum_conf', lang, n=conflicts))
     if operation == "update":
-        print(f"Updated: {updated}")
-        print(f"Total new commits: {new_commits_total}")
+        print(t('sum_updated', lang, n=updated))
+        print(t('sum_new', lang, n=new_commits_total))
     print("="*60 + "\n")
     
     if errors > 0:
-        print("Errors encountered:")
+        print(t('err_list', lang))
         for r in results:
             if r.get('status') == 'error':
                 print(f"  - {r['repo']}: {r.get('message', 'Unknown error')}")
