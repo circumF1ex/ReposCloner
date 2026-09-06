@@ -181,7 +181,7 @@ cython_debug/
 .cursorindexingignore
 
 repos/
-changes_results.json
+changes_results*.json
 reposcloner.log
 commit_summaries_*.json
 config.json

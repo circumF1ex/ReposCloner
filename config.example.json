@@ -1,0 +1,12 @@
+{
+  "repos_dir": "./repos",
+  "repos_file": "repos.txt",
+  "max_retries": 3,
+  "retry_delay": 2,
+  "max_workers": 4,
+  "enable_logging": true,
+  "log_file": "reposcloner.log",
+  "log_level": "INFO",
+  "auto_parallel": true,
+  "default_commit_limit": 50
+}

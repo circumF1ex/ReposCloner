@@ -1,4 +1,9 @@
-"""Git operations for cloning, updating, and managing repositories"""
+"""Git operations for cloning, updating, and managing repositories.
+
+All functions accept an optional ``repos_dir``. When omitted, the value set
+via :func:`init_git_operations` is used (kept for backward compatibility
+with the CLI; new code — and the future GUI — should pass it explicitly).
+"""
 
 import os
 import shutil
@@ -7,23 +12,39 @@ from git import Repo, GitCommandError
 from typing import Dict, Optional
 import logging
 
+from .repo_store import repo_path_for, validate_repo_id
+
 logger = logging.getLogger(__name__)
 
-# These will be set by the main module
+# Fallback for callers that still rely on init_* (legacy CLI path).
 REPOS_DIR = None
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 
+
 def init_git_operations(repos_dir: str, max_retries: int = 3, retry_delay: int = 2):
-    """Initialize git operations module with configuration"""
+    """Initialize module defaults (legacy; prefer passing repos_dir explicitly)."""
     global REPOS_DIR, MAX_RETRIES, RETRY_DELAY
     REPOS_DIR = repos_dir
     MAX_RETRIES = max_retries
     RETRY_DELAY = retry_delay
 
-def clone_repo(repo_name: str, retry_count: int = 0) -> Dict:
-    """Clone a repository from GitHub"""
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
+
+def _resolve_dir(repos_dir: Optional[str], repo_name: str) -> str:
+    base = repos_dir or REPOS_DIR
+    if not base:
+        raise ValueError("repos_dir is not set: pass it explicitly or call init_git_operations()")
+    # Validates the id — rejects '..', absolute paths, backslashes, etc.
+    validate_repo_id(repo_name)
+    return repo_path_for(base, repo_name)
+
+
+def clone_repo(repo_name: str, retry_count: int = 0, repos_dir: Optional[str] = None) -> Dict:
+    """Clone a repository from GitHub."""
+    try:
+        repo_path = _resolve_dir(repos_dir, repo_name)
+    except ValueError as e:
+        return {'repo': repo_name, 'status': 'error', 'message': str(e)}
     if os.path.exists(repo_path):
         logger.debug(f"Repository {repo_name} already cloned")
         return {'repo': repo_name, 'status': 'already_cloned'}
@@ -40,13 +61,23 @@ def clone_repo(repo_name: str, retry_count: int = 0) -> Dict:
         logger.warning(f"Error cloning {repo_name} (attempt {retry_count + 1}): {str(e)}")
         if retry_count < MAX_RETRIES:
             time.sleep(RETRY_DELAY)
-            return clone_repo(repo_name, retry_count + 1)
+            return clone_repo(repo_name, retry_count + 1, repos_dir)
         logger.error(f"Failed to clone {repo_name} after {MAX_RETRIES} attempts")
         return {'repo': repo_name, 'status': 'error', 'message': str(e)}
 
-def update_repo(repo_name: str) -> Dict:
-    """Update a repository by pulling latest changes"""
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
+
+def update_repo(repo_name: str, repos_dir: Optional[str] = None, force: bool = False) -> Dict:
+    """Pull latest changes.
+
+    On a merge conflict the default is to report ``status: 'conflict'`` and
+    leave the working tree untouched. Pass ``force=True`` (after explicit
+    user confirmation in the UI) to discard local changes via
+    ``fetch + reset --hard``.
+    """
+    try:
+        repo_path = _resolve_dir(repos_dir, repo_name)
+    except ValueError as e:
+        return {'repo': repo_name, 'status': 'error', 'message': str(e)}
     if not os.path.exists(repo_path):
         return {'repo': repo_name, 'status': 'not_cloned'}
     old_commit = None
@@ -73,7 +104,17 @@ def update_repo(repo_name: str) -> Dict:
         else:
             changes = {'repo': repo_name, 'status': 'no_changes'}
     except GitCommandError as e:
-        # Merge/overwrite by default: fetch and reset --hard
+        if not force:
+            logger.warning(f"Conflict updating {repo_name}; leaving working tree untouched")
+            return {
+                'repo': repo_name,
+                'status': 'conflict',
+                'message': (
+                    f"Pull failed ({e}). Local changes were kept. "
+                    "Re-run with force=True to discard them."
+                ),
+            }
+        # Explicitly confirmed destructive path: fetch and reset --hard
         try:
             if old_commit is None:
                 repo = Repo(repo_path)
@@ -104,9 +145,13 @@ def update_repo(repo_name: str) -> Dict:
         changes = {'repo': repo_name, 'status': 'error', 'message': f"Unexpected error: {str(e)}"}
     return changes
 
-def get_last_commit_summary(repo_name: str) -> Dict:
-    """Get summary of the last commit in a repository"""
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
+
+def get_last_commit_summary(repo_name: str, repos_dir: Optional[str] = None) -> Dict:
+    """Get summary of the last commit in a repository."""
+    try:
+        repo_path = _resolve_dir(repos_dir, repo_name)
+    except ValueError as e:
+        return {'repo': repo_name, 'status': 'error', 'message': str(e)}
     if not os.path.exists(repo_path):
         return {'repo': repo_name, 'status': 'not_cloned'}
     try:
@@ -125,9 +170,14 @@ def get_last_commit_summary(repo_name: str) -> Dict:
     except Exception as e:
         return {'repo': repo_name, 'status': 'error', 'message': str(e)}
 
-def view_commit_history(repo_name: str, limit: Optional[int] = None):
-    """View commit history for a repository"""
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
+
+def view_commit_history(repo_name: str, limit: Optional[int] = None, repos_dir: Optional[str] = None):
+    """View commit history for a repository."""
+    try:
+        repo_path = _resolve_dir(repos_dir, repo_name)
+    except ValueError as e:
+        print(f"Invalid repository id: {e}")
+        return
     if not os.path.exists(repo_path):
         print(f"Repository {repo_name} not cloned.")
         return
@@ -147,9 +197,13 @@ def view_commit_history(repo_name: str, limit: Optional[int] = None):
     except Exception as e:
         print(f"Error viewing history: {str(e)}")
 
-def reclone_repo(repo_name: str) -> Dict:
-    """Reclone a repository (delete and clone again)"""
-    repo_path = os.path.join(REPOS_DIR, repo_name.replace('/', '_'))
+
+def reclone_repo(repo_name: str, repos_dir: Optional[str] = None) -> Dict:
+    """Reclone a repository (delete and clone again)."""
+    try:
+        repo_path = _resolve_dir(repos_dir, repo_name)
+    except ValueError as e:
+        return {'repo': repo_name, 'status': 'error', 'message': str(e)}
     try:
         if os.path.exists(repo_path):
             max_retries = 5

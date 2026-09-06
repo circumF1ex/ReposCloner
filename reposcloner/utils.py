@@ -31,6 +31,7 @@ def print_summary(results: List[Dict], operation: str):
     total = len(results)
     success = sum(1 for r in results if r.get('status') in ['cloned', 'updated', 'updated_forced', 'recloned', 'already_cloned', 'no_changes'])
     errors = sum(1 for r in results if r.get('status') == 'error')
+    conflicts = sum(1 for r in results if r.get('status') == 'conflict')
     updated = sum(1 for r in results if r.get('status') in ['updated', 'updated_forced'])
     new_commits_total = sum(r.get('new_commits_count', 0) for r in results if 'new_commits_count' in r)
     
@@ -40,6 +41,8 @@ def print_summary(results: List[Dict], operation: str):
     print(f"Total repositories: {total}")
     print(f"Successful: {success}")
     print(f"Errors: {errors}")
+    if conflicts:
+        print(f"Conflicts (local changes kept): {conflicts}")
     if operation == "update":
         print(f"Updated: {updated}")
         print(f"Total new commits: {new_commits_total}")
