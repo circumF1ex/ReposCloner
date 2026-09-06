@@ -163,8 +163,7 @@ def handle_conflicts(results: List[Dict], config: Dict, lang: str) -> List[Dict]
     conflicts = [r for r in results if r.get('status') == 'conflict']
     if not conflicts:
         return results
-    print(f"\n{len(conflicts)}:")
-    print(t('conflict_list', lang))
+    print(f"\n{t('conflict_list', lang)} ({len(conflicts)}):")
     for r in conflicts:
         print(f"  - {r['repo']}")
     answer = input(t('force_q', lang)).strip().lower()

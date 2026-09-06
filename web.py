@@ -79,6 +79,10 @@ if choice != lang:
     cfg = get_runtime()['config']
     cfg['language'] = choice
     save_config(cfg)
+    # Drop widgets whose values are language-specific strings, otherwise the
+    # old-language value no longer matches the new options after rerun.
+    for key in ('danger_target', 'danger_mode', 'danger_confirm'):
+        st.session_state.pop(key, None)
     st.rerun()
 lang = choice
 
