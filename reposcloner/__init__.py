@@ -2,7 +2,7 @@
 ReposCloner - A tool for cloning and managing multiple GitHub repositories
 """
 
-__version__ = '1.1.0'
+__version__ = '1.2.0'
 
 from .config import is_debug_enabled, load_config, save_config, setup_logging
 from .i18n import DEFAULT_LANGUAGE, AVAILABLE_LANGUAGES, get_lang, t
