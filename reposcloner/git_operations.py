@@ -149,7 +149,10 @@ def update_repo(repo_name: str, repos_dir: Optional[str] = None, force: bool = F
                 }
             else:
                 changes = {'repo': repo_name, 'status': 'no_changes'}
-        except GitCommandError as e2:
+        except Exception as e2:
+            # Broad catch: detached HEAD (TypeError from active_branch),
+            # missing origin, and other unexpected states must report
+            # 'error' instead of crashing the caller.
             changes = {'repo': repo_name, 'status': 'error', 'message': f"Failed to update: {str(e2)}"}
     except Exception as e:
         changes = {'repo': repo_name, 'status': 'error', 'message': f"Unexpected error: {str(e)}"}

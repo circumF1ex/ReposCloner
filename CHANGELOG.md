@@ -7,15 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- `AGENTS.md`: developer notes for future sessions (architecture, standing
-  decisions, gotchas).
-
 ### Fixed
-- CLI conflict prompt no longer prints a stray bare-number line before the
-  conflict list.
-- Switching web console language no longer leaves stale translated widget
-  values (`danger_*`) that mismatch the rebuilt options.
+- `start.bat` / `start-web.bat` use the `py` launcher instead of `python`,
+  which on stock Windows resolves to the Microsoft Store stub and neither
+  installs dependencies nor starts the program.
+- `start-web.bat` checks for Python 3.8+ (required by `streamlit>=1.30.0`)
+  before installing anything: on older Python it prints the detected
+  version with a download link and cancels the launch instead of failing
+  with `No matching distribution found for streamlit>=1.30.0`.
+- Force-update no longer crashes on detached-HEAD checkouts: failures in
+  the `fetch + reset --hard` path report `status: 'error'` like any other
+  update failure.
+- `reposcloner.__version__` bumped to `1.2.0` to match the release below.
 
 ## [1.2.0] - 2026-09-07
 

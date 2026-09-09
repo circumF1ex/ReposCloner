@@ -70,23 +70,32 @@ This document outlines all the improvements made to the ReposCloner project for 
 1. Clone all repositories (with parallel option)
 2. Update all repositories (with parallel option)
 3. Show last commit summary for all repositories
-4. View commit history for a selected repository (with limit and author filter)
+4. View commit history for a selected repository (with limit)
 5. Reclone a specific repository
 6. **NEW**: Export commit summaries to JSON
 7. **NEW**: Show repository statistics
-8. Exit
+8. **NEW**: Search in commit messages across repositories
+9. Exit
+
+> Author filtering exists only in the standalone `commit_viewer.py`
+> (`--author`); the CLI history view (option 4) offers a commit limit.
 
 ## 🔧 Technical Details
 
-### Configuration Constants
-- `MAX_RETRIES = 3` - Number of retry attempts for failed operations
-- `RETRY_DELAY = 2` - Seconds to wait between retries
-- `MAX_WORKERS = 4` - Number of parallel threads for batch operations
+### Configuration (config.json, see config.example.json)
+- `max_retries = 3` - retry attempts for failed clone operations
+- `retry_delay = 2` - seconds between retries
+- `max_workers = 4` - parallel threads for batch operations
+- plus `repos_dir`, logging, `auto_parallel`, `default_commit_limit`,
+  `language`, `debug`. Falls back to built-in defaults when missing.
 
 ### File Changes
-- `main.py` - Enhanced with all new features
-- `commit_viewer.py` - Improved formatting and filtering
-- `IMPROVEMENTS.md` - This documentation file
+- `main.py` - import-safe entry point, menu options 1–9
+- `reposcloner/` - package: `config`, `git_operations`, `repo_store`,
+  `search`, `report`, `i18n`, `utils`
+- `web.py` - Streamlit teacher console (see 1.2.0 changelog)
+- `commit_viewer.py` - standalone viewer with author filter
+- `tests/` - offline pytest suite (git is mocked)
 
 ## 💡 Usage Tips
 
@@ -141,18 +150,21 @@ This document outlines all the improvements made to the ReposCloner project for 
    - Limits to recent commits (100 per repo) for performance
    - Summary of total matches found
 
-## 📋 Updated Menu Options
+## 📋 Updated Menu Options (1.2.0)
 
 1. Clone all repositories (with parallel option)
-2. Update all repositories (with parallel option)
+2. Update all repositories (with parallel option, conflict force-update flow)
 3. Show last commit summary for all repositories
-4. View commit history for a selected repository (with limit and author filter)
-5. Reclone a specific repository
+4. View commit history for a selected repository (with limit)
+5. Reclone a specific repository (with confirmation)
 6. Export commit summaries to JSON
 7. Show repository statistics
-8. **NEW**: Filter repositories by name pattern
-9. **NEW**: Search in commit messages across repositories
-10. Exit
+8. Search in commit messages across repositories
+9. Exit
+
+> Pattern-based filtering was removed in 1.2.0: the web console's
+> working-scope multiselect (and the CLI's merged inventory) covers
+> narrowing down the set. `filter_repos()` remains as a library helper.
 
 ## 🔧 Updated Configuration
 
@@ -179,7 +191,7 @@ This document outlines all the improvements made to the ReposCloner project for 
 
 ## 🔮 Future Enhancement Ideas
 
-1. **Web Interface**: Create a web dashboard for viewing statistics
+1. ~~**Web Interface**~~: ✅ done in 1.2.0 (`web.py` + HTML dashboard export)
 2. **Notifications**: Email/desktop notifications for updates
 3. **Scheduled Updates**: Automatic scheduled updates
 4. **Diff Viewing**: View file changes between commits

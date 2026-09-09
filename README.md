@@ -24,13 +24,30 @@ A powerful Python tool for cloning, updating, and managing multiple GitHub repos
 
 1. Install dependencies:
 ```bash
-pip install GitPython
+py -m pip install -r requirements.txt
 ```
 
 Or use the provided batch file:
 ```bash
 start.bat
 ```
+
+> **Windows note:** use the `py` launcher (`py main.py`, `py -m pip ...`).
+> A bare `python` command often resolves to the Microsoft Store stub,
+> which installs nothing and starts nothing. `start.bat` already uses `py`.
+
+### Web console (optional)
+
+The teacher's web console needs **Python 3.8+** (it requires
+`streamlit>=1.30.0`, which has no builds for older Python):
+
+```bash
+py -m pip install -r requirements-web.txt
+py -m streamlit run web.py
+```
+
+Or double-click `start-web.bat` — it refuses to launch on Python < 3.8
+and tells you where to get a newer Python instead of failing mid-install.
 
 ## Configuration
 
@@ -85,16 +102,38 @@ When cloning or updating, you'll be asked if you want to use parallel processing
 
 Use option 8 to search for text in commit messages across all repositories. Useful for finding specific topics or changes.
 
+## Web Console
+
+`web.py` (via `start-web.bat`, opens http://localhost:8501) offers the same
+workflows through a browser: repository inventory with a working scope,
+parallel clone/update with progress, a conflict force-update flow, commit
+viewer, commit-message search, statistics, and an exportable standalone HTML
+dashboard (`reposcloner/report.py`). Both English and Russian are supported
+with a sidebar switcher persisted to `config.json`.
+
+Tracked repositories live in `repos.json` (auto-created, git-ignored):
+`repos.txt` is only read once to migrate into it, and the app also discovers
+checkouts already present in `repos/`. New clones use `owner__repo` directory
+names; legacy `owner_repo` checkouts are still recognised.
+
 ## File Structure
 
 ```
 ReposCloner/
-├── main.py              # Main application
-├── commit_viewer.py     # Commit viewing utility
-├── config.json          # Configuration file (optional)
-├── repos.txt            # List of repositories
-├── reposcloner.log      # Log file
-├── start.bat            # Windows launcher
+├── main.py              # Console application (menu)
+├── web.py               # Web console (Streamlit)
+├── commit_viewer.py     # Standalone commit viewing utility
+├── reposcloner/         # Main package (config, git_operations, repo_store,
+│                         #   search, report, i18n, utils)
+├── tests/               # pytest suite (offline, git is mocked)
+├── config.example.json  # Example configuration (copy to config.json)
+├── repos.txt            # Legacy list, read once for migration only
+├── repos.json           # Tracked list (auto-created, git-ignored)
+├── requirements.txt     # Console dependencies (GitPython)
+├── requirements-web.txt # Web console dependencies (Streamlit)
+├── requirements-dev.txt # Test dependencies (pytest)
+├── start.bat            # Windows console launcher
+├── start-web.bat        # Windows web-console launcher
 └── repos/               # Cloned repositories directory
 ```
 
@@ -124,6 +163,16 @@ Logs are written to `reposcloner.log` (configurable). Log levels:
 
 ## Troubleshooting
 
+### Nothing happens when launching / Store opens
+`python` is likely the Microsoft Store stub. Use `py` instead:
+`py main.py`, `py -m pip install -r requirements.txt`.
+`start.bat` / `start-web.bat` already do this.
+
+### `No matching distribution found for streamlit>=1.30.0`
+Your Python is older than 3.8. Either upgrade Python (3.11+ recommended,
+https://www.python.org/downloads/) for the web console, or use the console
+app (`start.bat`), which works on Python 3.7+.
+
 ### Access Denied Errors
 If you get access denied errors when recloning:
 - Close any file explorers or Git GUIs accessing the repository
@@ -141,9 +190,10 @@ Check `reposcloner.log` for detailed error information and debugging.
 
 ## Requirements
 
-- Python 3.6+
-- GitPython library
-- Git installed on your system
+- Console app: Python 3.7+
+- Web console: Python 3.8+ (Streamlit requirement)
+- GitPython library (`requirements.txt`)
+- Git installed on your system (GitPython shells out to `git.exe`)
 
 ## License
 
