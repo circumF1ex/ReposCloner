@@ -29,7 +29,7 @@ ReposCloner/
 ├── web.py               # Web console (Streamlit)
 ├── commit_viewer.py     # Standalone commit viewer (subprocess-based)
 ├── config.example.json  # Example configuration (copy to config.json)
-├── repos.txt            # Legacy list, read once for migration only
+├── repos.txt.example    # Template; real repos.txt is local-only
 ├── repos.json           # Tracked list (auto-created, git-ignored)
 │
 ├── requirements.txt     # Console dependencies (GitPython)

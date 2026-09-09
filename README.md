@@ -72,11 +72,9 @@ Create a `config.json` file (or use the default settings):
 
 ### Basic Usage
 
-1. Add repository names to `repos.txt` (one per line):
-```
-username/repo-name
-another-user/another-repo
-```
+1. Add repositories via the web console (`start-web.bat`), or copy
+   `repos.txt.example` to `repos.txt` (git-ignored, one `owner/repo` per
+   line) for a one-time migration into the tracked list:
 
 2. Run the program:
 ```bash
@@ -127,7 +125,7 @@ ReposCloner/
 │                         #   search, report, i18n, utils)
 ├── tests/               # pytest suite (offline, git is mocked)
 ├── config.example.json  # Example configuration (copy to config.json)
-├── repos.txt            # Legacy list, read once for migration only
+├── repos.txt.example    # Template; real repos.txt stays local-only
 ├── repos.json           # Tracked list (auto-created, git-ignored)
 ├── requirements.txt     # Console dependencies (GitPython)
 ├── requirements-web.txt # Web console dependencies (Streamlit)
