@@ -1,0 +1,10 @@
+# Example repository list (one `owner/repo` per line).
+#
+# Copy to `repos.txt` (git-ignored, never committed) to migrate entries
+# into the tracked `repos.json` on next launch. Prefer adding repositories
+# one-by-one through the web console instead.
+#
+# Lines starting with `#` and blank lines are ignored.
+
+username/repo-name
+another-user/another-repo

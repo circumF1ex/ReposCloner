@@ -182,6 +182,7 @@ cython_debug/
 
 repos/
 repos.json
+repos.txt
 changes_results*.json
 reposcloner.log
 commit_summaries_*.json

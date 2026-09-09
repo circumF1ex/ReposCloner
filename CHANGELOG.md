@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   update failure.
 - `reposcloner.__version__` bumped to `1.2.0` to match the release below.
 
+### Removed
+- `repos.txt` is no longer tracked: real repository lists stay local-only
+  (git-ignored, like `.env`). A `repos.txt.example` template ships instead;
+  the one-time migration into `repos.json` is unchanged.
+
 ## [1.2.0] - 2026-09-07
 
 ### Added
